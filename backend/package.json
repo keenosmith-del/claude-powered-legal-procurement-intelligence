@@ -1,0 +1,39 @@
+{
+  "name": "backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/src/server.js",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "test": "vitest run",
+    "verify": "tsx tests/verify.ts",
+    "evaluate": "tsx ../evaluations/run.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "mammoth": "^1.10.0",
+    "multer": "^2.0.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.16.3",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.5",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.3"
+  }
+}

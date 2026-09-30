@@ -1,0 +1,68 @@
+Supplier A — Commercial agreement
+Demonstration document. No actual supplier offer.
+
+1. pricing / annualPrice
+Annual recurring price: ZAR 2400000. VAT is excluded.
+
+2. pricing / currency
+All quoted amounts are in South African rand (ZAR).
+
+3. pricing / setupFees
+One-time implementation fee: ZAR 120000.
+
+4. pricing / additionalCharges
+Out-of-scope work requires a separately approved quotation.
+
+5. payment / paymentDays
+Invoices are payable within 30 days of receipt.
+
+6. payment / invoicing
+Recurring services are invoiced monthly in arrears.
+
+7. payment / deposit
+No deposit is required.
+
+8. contract / durationMonths
+The initial term is 36 months.
+
+9. contract / cancellationDays
+Termination for convenience is allowed with 90 days written notice after the initial twelve months; no further recurring fees are payable.
+
+10. contract / autoRenewal
+Renewal requires written agreement.
+
+11. contract / renewal
+Renewal requires written agreement.
+
+12. escalation / escalationPercent
+Recurring fees increase by 6% on each anniversary; the first adjustment occurs at the start of year two.
+
+13. escalation / escalationBasis
+Escalation is a fixed 6% annual percentage, not CPI-linked.
+
+14. escalation / escalationCap
+The annual escalation is capped at 6%.
+
+15. warranty / warrantyMonths
+Workmanship and replacement parts warranty lasts 12 months.
+
+16. warranty / warrantyCoverage
+Warranty covers workmanship and replacement parts.
+
+17. warranty / warrantyExclusions
+Consumables and unauthorised modifications are excluded.
+
+18. liability / liabilityCapMonths
+Aggregate liability is capped at 18 months of recurring fees.
+
+19. liability / liabilityExclusions
+Fraud and wilful misconduct are excluded from the liability cap.
+
+20. liability / indemnities
+No express IP infringement indemnity is provided.
+
+21. penalties / penalties
+No additional monetary penalties apply beyond the specified service credits.
+
+22. penalties / breachConsequences
+Material breach is subject to a 30-day cure period before termination for cause.

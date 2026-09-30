@@ -1,0 +1,23 @@
+Supplier A — Service and support schedule
+Demonstration document. No actual supplier offer.
+
+1. sla / availabilityPercent
+Monthly service availability commitment: 99.5%, excluding scheduled maintenance of up to four hours monthly.
+
+2. sla / responseMinutes
+Critical incident response within 60 minutes.
+
+3. sla / resolutionHours
+Target critical incident resolution: 12 hours; this is a target rather than a guarantee.
+
+4. sla / serviceCredits
+5% of monthly fees for each 0.5 percentage point availability shortfall, capped at 15%.
+
+5. support / supportHours
+Business hours 08:00–18:00 weekdays; critical incidents have an on-call telephone channel.
+
+6. support / supportChannels
+Support channels include telephone, email and portal.
+
+7. support / supportCommitments
+An escalation manager is assigned to critical incidents.

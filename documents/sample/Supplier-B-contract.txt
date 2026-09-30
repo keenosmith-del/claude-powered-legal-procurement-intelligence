@@ -1,0 +1,68 @@
+Supplier B — Commercial agreement
+Demonstration document. No actual supplier offer.
+
+1. pricing / annualPrice
+Annual recurring price: ZAR 2100000. VAT is excluded.
+
+2. pricing / currency
+All quoted amounts are in South African rand (ZAR).
+
+3. pricing / setupFees
+One-time implementation fee: ZAR 220000.
+
+4. pricing / additionalCharges
+Out-of-scope work requires a separately approved quotation.
+
+5. payment / paymentDays
+Invoices are payable within 60 days of receipt.
+
+6. payment / invoicing
+Recurring services are invoiced monthly in arrears.
+
+7. payment / deposit
+No deposit is required.
+
+8. contract / durationMonths
+The initial term is 36 months.
+
+9. contract / cancellationDays
+Termination permitted upon thirty days prior written notification. During the initial twelve months, 50% of the remaining annual fees become payable.
+
+10. contract / autoRenewal
+Automatically renews for twelve months unless notice is given 60 days before expiry.
+
+11. contract / renewal
+Automatically renews for twelve months unless notice is given 60 days before expiry.
+
+12. escalation / escalationPercent
+Recurring fees increase by 8% on each anniversary; the first adjustment occurs at the start of year two.
+
+13. escalation / escalationBasis
+Escalation is a fixed 8% annual percentage, not CPI-linked.
+
+14. escalation / escalationCap
+The annual escalation is capped at 8%.
+
+15. warranty / warrantyMonths
+Workmanship and replacement parts warranty lasts 24 months.
+
+16. warranty / warrantyCoverage
+Warranty covers workmanship and replacement parts.
+
+17. warranty / warrantyExclusions
+Third-party components, power faults and consequential loss are excluded.
+
+18. liability / liabilityCapMonths
+Aggregate liability is capped at 6 months of recurring fees.
+
+19. liability / liabilityExclusions
+The cap applies to all claims including data loss; fraud is excluded. No data security indemnity is offered.
+
+20. liability / indemnities
+No express IP infringement indemnity is provided.
+
+21. penalties / penalties
+No additional monetary penalties apply beyond the specified service credits.
+
+22. penalties / breachConsequences
+Material breach is subject to a 30-day cure period before termination for cause.

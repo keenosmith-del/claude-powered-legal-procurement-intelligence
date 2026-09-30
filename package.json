@@ -1,0 +1,23 @@
+{
+  "name": "legal-procurement-intelligence",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build -w backend && npm run build -w frontend",
+    "test": "npm run test -w backend",
+    "db:migrate": "npm run migrate -w backend",
+    "db:seed": "npm run seed -w backend",
+    "verify": "npm run verify -w backend",
+    "evaluate": "npm run evaluate -w backend",
+    "format": "prettier --write backend/src backend/tests frontend/src evaluations/*.ts *.json frontend/*.ts frontend/*.json backend/*.json",
+    "format:check": "prettier --check backend/src backend/tests frontend/src evaluations/*.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "prettier": "^3.9.9"
+  }
+}
