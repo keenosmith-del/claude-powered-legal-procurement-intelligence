@@ -25,7 +25,7 @@ export async function context(id: string) {
   );
   for (const s of suppliers) {
     s.contractTerms = await query(
-      "SELECT t.*,d.filename FROM contract_terms t JOIN supplier_documents d ON d.id=t.source_document_id WHERE t.supplier_id=$1 ORDER BY t.created_at",
+      "SELECT t.*,d.filename FROM contract_terms t JOIN supplier_documents d ON d.id=t.source_document_id WHERE t.supplier_id=$1 AND t.active ORDER BY t.created_at",
       [s.id],
     );
     s.documents = await query(
@@ -40,6 +40,17 @@ export async function comparison(id: string, persist = true) {
   const suppliers = compare(ctx.event, ctx.suppliers);
   if (persist)
     await transaction(async (c) => {
+      const current = (
+        await c.query(
+          "SELECT revision FROM procurement_events WHERE id=$1 FOR UPDATE",
+          [id],
+        )
+      ).rows[0];
+      if (current.revision !== ctx.event.revision)
+        throw new AppError(
+          409,
+          "Event changed during comparison; reload current inputs",
+        );
       for (const s of suppliers) {
         await c.query(
           "INSERT INTO supplier_evaluations(event_id,supplier_id,criterion_scores,deterministic_score) VALUES($1,$2,$3,$4) ON CONFLICT(event_id,supplier_id) DO UPDATE SET criterion_scores=excluded.criterion_scores,deterministic_score=excluded.deterministic_score",
@@ -65,11 +76,11 @@ export async function comparison(id: string, persist = true) {
   return { event: ctx.event, suppliers };
 }
 export async function latestAnalysis(id: string) {
+  const e = await eventById(id);
   const [a] = await query(
     "SELECT * FROM analyses WHERE event_id=$1 ORDER BY generated_at DESC LIMIT 1",
     [id],
   );
   if (!a) return null;
-  const e = await eventById(id);
   return { ...a, stale: a.revision !== e.revision };
 }

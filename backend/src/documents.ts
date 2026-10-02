@@ -1,8 +1,8 @@
 import { readFile, mkdir, unlink } from "node:fs/promises";
-import path from "node:path";
+import type pg from "pg";
 import mammoth from "mammoth";
 import { PDFParse } from "pdf-parse";
-import { query, transaction, audit, invalidate } from "./db.js";
+import { query, transaction, audit } from "./db.js";
 import { config } from "./config.js";
 import { AppError, extractionSchema, termKeys } from "./schemas.js";
 import { structured } from "./ai.js";
@@ -28,7 +28,11 @@ export async function readDocument(file: string, mime: string) {
   } else if (mime === "text/plain") {
     if (buffer.includes(0))
       throw new AppError(415, "Binary files cannot be uploaded as text");
-    text = buffer.toString("utf8");
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+    } catch {
+      throw new AppError(415, "TXT documents must use valid UTF-8 encoding");
+    }
   } else throw new AppError(415, "Supported documents: PDF, DOCX, TXT");
   if (text.trim().length < 20)
     throw new AppError(
@@ -73,13 +77,26 @@ export function chunkText(text: string, max = 6000) {
   if (content) chunks.push({ location: `lines ${start}-${end}`, content });
   return chunks;
 }
-export async function processText(documentId: string) {
-  const [d] = await query("SELECT * FROM supplier_documents WHERE id=$1", [
+export async function processText(documentId: string, client?: pg.PoolClient) {
+  const read = client
+    ? async (sql: string, values: unknown[]) =>
+        (await client.query(sql, values)).rows
+    : query;
+  const [d] = await read("SELECT * FROM supplier_documents WHERE id=$1", [
     documentId,
   ]);
   if (!d) throw new AppError(404, "Document not found");
-  const text = await readDocument(d.storage_path, d.mime_type);
-  await transaction(async (c) => {
+  let text: string;
+  try {
+    text = await readDocument(d.storage_path, d.mime_type);
+  } catch (e) {
+    if (e instanceof AppError) throw e;
+    throw new AppError(
+      422,
+      "Document processing failed. Upload a readable, unencrypted PDF, valid DOCX or UTF-8 TXT file.",
+    );
+  }
+  const save = async (c: pg.PoolClient) => {
     await c.query("DELETE FROM document_chunks WHERE document_id=$1", [
       documentId,
     ]);
@@ -92,7 +109,9 @@ export async function processText(documentId: string) {
       "UPDATE supplier_documents SET extracted_text=$2,processing_status='text_ready',error=NULL WHERE id=$1",
       [documentId, text],
     );
-  });
+  };
+  if (client) await save(client);
+  else await transaction(save);
   return d;
 }
 export function validateExtraction(result: unknown, chunks: any[]) {
@@ -181,9 +200,14 @@ export async function extract(documentId: string) {
       limitations.push(...data.limitations);
     }
     await transaction(async (c) => {
-      await c.query("DELETE FROM contract_terms WHERE source_document_id=$1", [
-        documentId,
-      ]);
+      await c.query(
+        "SELECT id FROM procurement_events WHERE id=$1 FOR UPDATE",
+        [d.event_id],
+      );
+      await c.query(
+        "UPDATE contract_terms SET active=false WHERE source_document_id=$1 AND active",
+        [documentId],
+      );
       for (const t of terms) {
         const chunk = chunks.find((c) => c.id === t.chunkId);
         await c.query(

@@ -5,6 +5,7 @@ import { Badge, Empty, Panel } from "../components/ui";
 import { useEffect } from "react";
 import EventEditor from "../components/EventEditor";
 export default function Home() {
+  const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [create, setCreate] = useState(false);
@@ -12,7 +13,8 @@ export default function Home() {
   useEffect(() => {
     api("/procurement-events")
       .then(setEvents)
-      .catch((e) => setError(e.message));
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
   return (
     <main className="home">
@@ -64,7 +66,8 @@ export default function Home() {
           </Link>
         ))}
       </div>
-      {!events.length && !error && (
+      {loading && <Empty>Loading procurement events…</Empty>}
+      {!loading && !events.length && !error && (
         <Empty>No procurement events yet. Create one to begin.</Empty>
       )}
     </main>

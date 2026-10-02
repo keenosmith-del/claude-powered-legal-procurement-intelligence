@@ -5,7 +5,7 @@ import type {
   AuditRecord,
   DecisionRecord,
 } from "../types";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, label } from "../api";
 import { Badge, Empty } from "../components/ui";
@@ -38,8 +38,11 @@ const tabs = [
 ];
 export default function Workspace() {
   const { id } = useParams();
+  const currentId = useRef(id);
+  currentId.current = id;
   const [data, setData] = useState<ComparisonResponse | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisRecord | null>(null);
+  const [historicalTerms, setHistoricalTerms] = useState<ContractTerm[]>([]);
   const [terms, setTerms] = useState<ContractTerm[]>([]);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
@@ -47,13 +50,17 @@ export default function Workspace() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   async function load() {
-    const [c, a, t, u, d] = await Promise.all([
+    const loadedId = id;
+    const [c, a, t, u, d, h] = await Promise.all([
       api<ComparisonResponse>(`/procurement-events/${id}/comparison`),
       api<AnalysisRecord | null>(`/procurement-events/${id}/analysis`),
       api<ContractTerm[]>(`/procurement-events/${id}/terms`),
       api<AuditRecord[]>(`/procurement-events/${id}/audit`),
       api<DecisionRecord[]>(`/procurement-events/${id}/decisions`),
+      api<ContractTerm[]>(`/procurement-events/${id}/terms?history=1`),
     ]);
+    if (currentId.current !== loadedId) return;
+    setHistoricalTerms(h);
     setData(c);
     setAnalysis(a);
     setTerms(t);
@@ -62,7 +69,12 @@ export default function Workspace() {
   }
   useEffect(() => {
     setData(null);
-    load().catch((e) => setError(e.message));
+    setError("");
+    setNotice("");
+    const loadedId = id;
+    load().catch((e) => {
+      if (currentId.current === loadedId) setError(e.message);
+    });
   }, [id]);
   async function action(fn: () => Promise<unknown>, message = "Saved") {
     setBusy(true);
@@ -98,7 +110,7 @@ export default function Workspace() {
   const refs = (ids: string[]) => (
     <div className="refs">
       {ids.map((ref) => {
-        const t = terms.find((t) => t.id === ref);
+        const t = historicalTerms.find((t) => t.id === ref);
         return t ? (
           <details key={ref}>
             <summary>
@@ -207,7 +219,12 @@ export default function Workspace() {
           <Route
             path="documents"
             element={
-              <Documents suppliers={suppliers} action={action} busy={busy} />
+              <Documents
+                key={id}
+                suppliers={suppliers}
+                action={action}
+                busy={busy}
+              />
             }
           />
           <Route path="terms" element={<TermsView {...viewProps} />} />

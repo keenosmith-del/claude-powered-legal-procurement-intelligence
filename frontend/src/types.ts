@@ -66,6 +66,7 @@ export interface SupplierComparison {
     reason: string;
   }[];
   missing: string[];
+  missingFields: string[];
   conflicts: string[];
   costDifference: number | null;
   percentageDifference: number | null;

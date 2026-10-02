@@ -20,7 +20,7 @@ Open [the procurement workspace](http://127.0.0.1:5173). API: [health](http://12
 
 The database remains in the Docker named volume after shutdown. `docker compose stop` stops it without deleting data. Seed is idempotent and does not overwrite an existing demo event. Migrations are tracked and protected by a PostgreSQL advisory lock.
 
-**Current machine verification:** Docker Desktop is running and the Compose database has been verified. The project publishes PostgreSQL on **5433** because an existing local PostgreSQL service occupies 5432. Set `POSTGRES_PORT` and the corresponding `DATABASE_URL` to use a different host port. The original temporary verification database remains on port 55432; its project data was copied into Docker before switching the ignored local `.env`. Docker's named volume is now the application's database storage.
+**Local database:** Compose publishes PostgreSQL on **5433** to avoid a local service on 5432. Set `POSTGRES_PORT` and the corresponding `DATABASE_URL` together to change the host port. Start Docker Desktop before running Compose. See [VERIFICATION.md](VERIFICATION.md) for the current checkpoint and live-AI blocker.
 
 ### Environment
 
@@ -95,7 +95,7 @@ PostgreSQL is the source of truth. Relational foreign keys link:
 - Versioned analyses, qualitative risks, negotiation opportunities and analysis evidence.
 - Human decisions and audit events.
 
-Flexible requirements, normalised values and structured AI outputs use JSONB; entity relationships and evidence ownership remain relational. Analyses store the model, event revision, workflow trace and timestamp. Changing requirements, adding suppliers, uploading documents or re-extracting terms increments the event revision. Old analysis is visibly marked stale, and an acceptance referencing stale analysis is rejected. Historical decisions and analyses remain stored.
+Flexible requirements, normalised values and structured AI outputs use JSONB; entity relationships and evidence ownership remain relational. Analyses store the model, event revision, workflow trace and timestamp. Changing requirements, adding or editing suppliers, uploading documents or re-extracting terms increments the event revision. Old analysis is visibly marked stale, and an acceptance referencing stale analysis is rejected. Historical decisions and analyses remain stored.
 
 Analysis results, risk records, opportunities and evidence links are committed in one transaction. An event revision check rejects an analysis generated over changing inputs. Seed data is atomic and reproducible. Financial metrics/evaluations are persisted when comparison runs.
 
@@ -105,7 +105,7 @@ Uploads support text-bearing PDF, DOCX and UTF-8 TXT, up to 10 MB. Extension/MIM
 
 Text is chunked into bounded sections with line/character locations. Claude sees a maximum of three 6,000-character chunks per extraction request, not an entire collection. Each extracted fact includes its document, chunk, location, verbatim excerpt, confidence, value and unit. The Zod model covers pricing, payment, duration/renewal, cancellation, escalation, SLA, warranty, liability, support and breach consequences. Absent values stay null/unknown. Contradictory values across documents become unknown and are listed as conflicts rather than silently resolved.
 
-The validator rejects nonexistent source chunks, excerpts absent from source text, negative numeric facts, out-of-range percentages and invalid output types. Extraction replaces a document's terms transactionally only after all chunks pass validation. Failures retain previous terms and a useful document status; interrupted extraction is marked retryable on server restart.
+The validator rejects nonexistent source chunks, excerpts absent from source text, negative numeric facts, out-of-range percentages and invalid output types. Extraction supersedes a document's current terms transactionally only after all chunks pass validation. Superseded terms retain their IDs and source excerpts for historical analysis references; comparisons use only active terms. The terms API defaults to current facts; `?history=1` also returns superseded evidence. Failures retain previous terms and a useful document status; interrupted extraction is marked retryable on server restart.
 
 Seeded documents are intentionally labelled `seed-reviewed`: their terms are curated sample facts with exact excerpts, **not AI-generated output**. Click **Extract with Claude** to exercise real extraction. Extraction confidence is the model's self-reported confidence and is not a calibrated probability.
 
@@ -199,7 +199,7 @@ All IDs are UUIDs; JSON/input errors receive meaningful HTTP status codes.
 | GET / POST | `/api/procurement-events` | List/create events |
 | GET / PUT | `/api/procurement-events/:id` | Read/update requirements and weights |
 | GET / POST | `/api/procurement-events/:id/suppliers` | List/add suppliers |
-| GET | `/api/suppliers/:id` | Supplier detail |
+| GET / PUT | `/api/suppliers/:id` | Supplier detail / edit name and description; invalidates analysis |
 | GET / POST | `/api/suppliers/:id/documents` | List/upload; multipart field `file` and optional `documentType` |
 | GET | `/api/documents/:id` | Processed source text/chunks |
 | GET | `/api/documents/:id/download` | Original document |
@@ -230,7 +230,7 @@ EVALUATE_REAL_AI=1 npm run evaluate # Generate and evaluate an actual analysis
 
 Unit tests cover compounding/rounding, invalid inputs, negotiation savings, missing/contradictory data, weights, SLA downtime scoring, extraction evidence validation, risk/opportunity schemas, event-scoped tools, malformed Claude outputs, truncation and tool-loop behavior. Anthropic transport is mocked **only in tests**.
 
-`npm run verify` uses the Express application with Supertest and real PostgreSQL. It creates a temporary event, uploads a real sample document, validates source traceability, persists evaluation data, runs scenarios and records a decision/audit. It deletes its temporary relational test data. When no key is configured, it verifies the clear missing-key errors and explicitly reports that real AI was skipped. The mocked database test removes its fixture analysis, risks, opportunities and evidence and never supplies an application recommendation.
+`npm run verify` uses the Express application with Supertest and real PostgreSQL. It creates a temporary event, uploads a real sample document, validates source traceability, persists evaluation data, runs scenarios and records a decision/audit. It starts a temporary API on port **3002**, reads documents/decisions/comparison through two independent server processes to check restart persistence, then deletes its temporary relational data and uploaded files. Keep port 3002 free when verifying. When no key is configured, it verifies the clear missing-key errors and explicitly reports that real AI was skipped. Database tests use isolated temporary events and test-only mocked Anthropic transport, then remove their fixtures. They check successful re-extraction with existing historical evidence, stale-approval rejection and retention of valid facts after a failed extraction.
 
 `VERIFY_REAL_AI=1` incurs API usage and re-extracts all six demo documents before running analysis. It checks that real tool calls occurred and analysis evidence was stored. It does not silently substitute a mock if the key or API is unavailable. The evaluation runner checks escalation risk/negotiation, premium-price/protection trade-offs, grounded recommendations and actual tool use; failures return a nonzero exit code. These are focused heuristic evaluations, not calibrated measures of legal correctness.
 

@@ -62,7 +62,11 @@ export default function FinancialView({
           uses initial duration; scenario horizon is independent.
         </p>
       </Panel>
-      <WhatIf eventId={id!} suppliers={suppliers} />
+      <WhatIf
+        key={`${id}:${event.revision}`}
+        eventId={id!}
+        suppliers={suppliers}
+      />
     </>
   );
 }

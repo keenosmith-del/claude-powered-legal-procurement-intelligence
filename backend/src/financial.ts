@@ -1,4 +1,9 @@
-import { AppError, type Requirements, categories } from "./schemas.js";
+import {
+  AppError,
+  type Requirements,
+  categories,
+  termKeys,
+} from "./schemas.js";
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
 export function projectCost(
@@ -16,6 +21,7 @@ export function projectCost(
     !Number.isInteger(years) ||
     years < 1 ||
     years > 10 ||
+    !Number.isFinite(setup) ||
     setup < 0
   )
     throw new AppError(422, "Invalid financial inputs");
@@ -221,6 +227,7 @@ export function evaluate(
     deterministicScore,
     deviations,
     missing,
+    missingFields: termKeys.filter((key) => terms[key] == null),
     paymentDays: payment,
     limitations: [
       "Cost projections exclude tax, discounting, unquantified additional charges and service credits.",

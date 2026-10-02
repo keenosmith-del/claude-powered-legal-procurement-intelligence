@@ -24,6 +24,7 @@ export default function WhatIf({
           e.preventDefault();
           setBusy(true);
           setError("");
+          setResult(null);
           const f = new FormData(e.currentTarget);
           const changes: Record<string, number> = {};
           for (const key of [
@@ -88,7 +89,7 @@ export default function WhatIf({
           <input name="explain" type="checkbox" />
           Explain implications with Claude
         </label>
-        <button disabled={busy}>
+        <button disabled={busy || !suppliers.length}>
           {busy ? "Calculating…" : "Calculate scenario"}
         </button>
       </form>

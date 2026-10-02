@@ -35,6 +35,40 @@ export default function SuppliersView({
           <div>
             <h3>{s.name}</h3>
             <p>{s.description}</p>
+            <details>
+              <summary>Edit supplier</summary>
+              <form
+                key={`${s.name}:${s.description}`}
+                className="inline-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = new FormData(e.currentTarget);
+                  void action(
+                    () =>
+                      api(`/suppliers/${s.id}`, "PUT", {
+                        name: form.get("name"),
+                        description: form.get("description"),
+                      }),
+                    "Supplier updated; previous analysis must be rerun",
+                  );
+                }}
+              >
+                <input
+                  name="name"
+                  aria-label="Supplier name"
+                  required
+                  maxLength={100}
+                  defaultValue={s.name}
+                />
+                <input
+                  name="description"
+                  aria-label="Supplier description"
+                  maxLength={2000}
+                  defaultValue={s.description}
+                />
+                <button disabled={busy}>Save supplier</button>
+              </form>
+            </details>
           </div>
           <Link to={`/events/${id}/suppliers/${s.id}`}>
             Inspect submission →

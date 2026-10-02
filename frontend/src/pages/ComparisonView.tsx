@@ -20,7 +20,32 @@ export default function ComparisonView({ suppliers }: WorkspaceViewProps) {
               {[
                 [
                   "Annual recurring price",
-                  (s: any) => money(s.terms.annualPrice),
+                  (s: any) =>
+                    s.terms.currency === "ZAR"
+                      ? money(s.terms.annualPrice)
+                      : s.terms.annualPrice == null
+                        ? "Unknown"
+                        : `${s.terms.annualPrice} ${s.terms.currency ?? "(currency unknown)"}`,
+                ],
+                [
+                  "Setup costs",
+                  (s: any) =>
+                    s.terms.currency === "ZAR"
+                      ? money(s.terms.setupFees)
+                      : s.terms.setupFees == null
+                        ? "Unknown"
+                        : `${s.terms.setupFees} ${s.terms.currency ?? "(currency unknown)"}`,
+                ],
+                [
+                  "Contract duration",
+                  (s: any) =>
+                    s.terms.durationMonths == null
+                      ? "Unknown"
+                      : `${s.terms.durationMonths} months`,
+                ],
+                [
+                  "Support hours",
+                  (s: any) => s.terms.supportHours ?? "Unknown",
                 ],
                 [
                   "Five-year / selected horizon cost",
@@ -105,6 +130,11 @@ export default function ComparisonView({ suppliers }: WorkspaceViewProps) {
             )}
             {s.missing.length > 0 && (
               <p>Insufficient evidence: {s.missing.join(", ")}</p>
+            )}
+            {s.missingFields.length > 0 && (
+              <p>
+                Unknown contract fields: {s.missingFields.map(label).join(", ")}
+              </p>
             )}
             {Object.entries(s.criterionScores).map(([key, v]) => (
               <div className="score" key={key}>

@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
 import { config } from "./config.js";
-import { query, transaction, audit, invalidate } from "./db.js";
+import { query, transaction, audit } from "./db.js";
 import { AppError, eventSchema, parse } from "./schemas.js";
 import {
   eventById,
@@ -136,26 +136,72 @@ app.post("/api/procurement-events/:id/suppliers", async (req, res) => {
   await eventById(id);
   const data = parse(
     z.object({
-      name: z.string().min(1).max(100),
+      name: z.string().trim().min(1).max(100),
       description: z.string().max(2000).default(""),
     }),
     req.body,
   );
-  const [s] = await query(
-    "INSERT INTO suppliers(event_id,name,description) VALUES($1,$2,$3) RETURNING *",
-    [id, data.name, data.description],
-  );
-  await invalidate(id);
-  await audit(id, "supplier.added", { supplierId: s.id });
+  const s = await transaction(async (c) => {
+    await c.query("SELECT id FROM procurement_events WHERE id=$1 FOR UPDATE", [
+      id,
+    ]);
+    const [s] = (
+      await c.query(
+        "INSERT INTO suppliers(event_id,name,description) VALUES($1,$2,$3) RETURNING *",
+        [id, data.name, data.description],
+      )
+    ).rows;
+    await c.query(
+      "UPDATE procurement_events SET revision=revision+1,status='review',updated_at=now() WHERE id=$1",
+      [id],
+    );
+    await c.query(
+      "INSERT INTO audit_events(event_id,event_type,metadata) VALUES($1,'supplier.added',$2)",
+      [id, JSON.stringify({ supplierId: s.id })],
+    );
+    return s;
+  });
   res.status(201).json(s);
+});
+app.put("/api/suppliers/:id", async (req, res) => {
+  const s = await supplierById(uuid(req.params.id));
+  const data = parse(
+    z.object({
+      name: z.string().trim().min(1).max(100),
+      description: z.string().max(2000).default(""),
+    }),
+    req.body,
+  );
+  const updated = await transaction(async (c) => {
+    await c.query("SELECT id FROM procurement_events WHERE id=$1 FOR UPDATE", [
+      s.event_id,
+    ]);
+    const [supplier] = (
+      await c.query(
+        "UPDATE suppliers SET name=$2,description=$3 WHERE id=$1 RETURNING *",
+        [s.id, data.name, data.description],
+      )
+    ).rows;
+    await c.query(
+      "UPDATE procurement_events SET revision=revision+1,status='review',updated_at=now() WHERE id=$1",
+      [s.event_id],
+    );
+    await c.query(
+      "INSERT INTO audit_events(event_id,event_type,metadata) VALUES($1,'supplier.updated',$2)",
+      [s.event_id, JSON.stringify({ supplierId: s.id })],
+    );
+    return supplier;
+  });
+  res.json(updated);
 });
 app.get("/api/suppliers/:id", async (req, res) => {
   const s = await supplierById(uuid(req.params.id));
   res.json({
     ...s,
-    terms: await query("SELECT * FROM contract_terms WHERE supplier_id=$1", [
-      s.id,
-    ]),
+    terms: await query(
+      "SELECT * FROM contract_terms WHERE supplier_id=$1 AND active",
+      [s.id],
+    ),
     documents: await query(
       "SELECT id,filename,mime_type,document_type,processing_status,error FROM supplier_documents WHERE supplier_id=$1",
       [s.id],
@@ -215,7 +261,6 @@ app.post(
   async (req, res) => {
     const file = req.file;
     if (!file) throw new AppError(400, "A document file is required");
-    let documentId: string | undefined;
     try {
       const s = await supplierById(uuid(req.params.id));
       const type = parse(
@@ -229,28 +274,40 @@ app.post(
         ]),
         req.body.documentType ?? "contract",
       );
-      const [d] = await query(
-        "INSERT INTO supplier_documents(supplier_id,document_type,filename,mime_type,storage_path) VALUES($1,$2,$3,$4,$5) RETURNING *",
-        [
-          s.id,
-          type,
-          path.basename(file.originalname),
-          file.mimetype,
-          file.path,
-        ],
-      );
-      documentId = d.id;
-      await processText(d.id);
-      await invalidate(s.event_id);
-      await audit(s.event_id, "document.uploaded", { documentId: d.id });
+      const d = await transaction(async (c) => {
+        await c.query(
+          "SELECT id FROM procurement_events WHERE id=$1 FOR UPDATE",
+          [s.event_id],
+        );
+        const [d] = (
+          await c.query(
+            "INSERT INTO supplier_documents(supplier_id,document_type,filename,mime_type,storage_path) VALUES($1,$2,$3,$4,$5) RETURNING *",
+            [
+              s.id,
+              type,
+              path.basename(file.originalname),
+              file.mimetype,
+              file.path,
+            ],
+          )
+        ).rows;
+        await processText(d.id, c);
+        await c.query(
+          "UPDATE procurement_events SET revision=revision+1,status='review',updated_at=now() WHERE id=$1",
+          [s.event_id],
+        );
+        await c.query(
+          "INSERT INTO audit_events(event_id,event_type,metadata) VALUES($1,'document.uploaded',$2)",
+          [s.event_id, JSON.stringify({ documentId: d.id })],
+        );
+        return d;
+      });
       res.status(201).json({
         id: d.id,
         filename: d.filename,
         processing_status: "text_ready",
       });
     } catch (e) {
-      if (documentId)
-        await query("DELETE FROM supplier_documents WHERE id=$1", [documentId]);
       await removeUpload(file.path);
       throw e;
     }
@@ -285,8 +342,8 @@ app.get("/api/procurement-events/:id/terms", async (req, res) => {
   await eventById(id);
   res.json(
     await query(
-      "SELECT t.*,d.filename,s.name AS supplier_name FROM contract_terms t JOIN supplier_documents d ON d.id=t.source_document_id JOIN suppliers s ON s.id=t.supplier_id WHERE s.event_id=$1 ORDER BY s.name,t.category,t.term",
-      [id],
+      "SELECT t.*,d.filename,s.name AS supplier_name FROM contract_terms t JOIN supplier_documents d ON d.id=t.source_document_id JOIN suppliers s ON s.id=t.supplier_id WHERE s.event_id=$1 AND ($2 OR t.active) ORDER BY s.name,t.category,t.term",
+      [id, req.query.history === "1"],
     ),
   );
 });

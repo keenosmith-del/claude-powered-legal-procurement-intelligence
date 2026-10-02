@@ -16,10 +16,53 @@ afterAll(async () => pool.end());
 it.skipIf(!enabled)(
   "persists structured Claude results, risks, negotiations and evidence atomically using a mocked transport",
   async () => {
-    const [event] = await query(
+    const [demo] = await query(
       "SELECT id FROM procurement_events WHERE title='Enterprise Infrastructure Support Procurement'",
     );
-    expect(event).toBeTruthy();
+    expect(demo).toBeTruthy();
+    const source = await comparison(demo.id, false);
+    const made = await request(app)
+      .post("/api/procurement-events")
+      .send({
+        title: "Analysis integration test",
+        category: "Test",
+        requirements: source.event.requirements,
+        criteria: source.event.criteria.map((c: any) => ({
+          category: c.category,
+          weight: Number(c.weight),
+          description: c.description,
+        })),
+      });
+    expect(made.status).toBe(201);
+    const event = made.body;
+    // Copy source-backed sample facts into an isolated fixture; never alter the user's demo.
+    for (const original of source.suppliers) {
+      const supplier = (
+        await request(app)
+          .post(`/api/procurement-events/${event.id}/suppliers`)
+          .send({ name: original.name })
+      ).body;
+      for (const doc of original.documents) {
+        const [copied] = await query(
+          "INSERT INTO supplier_documents(supplier_id,document_type,filename,mime_type,storage_path,extracted_text,processing_status) SELECT $2,document_type,filename,mime_type,storage_path,extracted_text,processing_status FROM supplier_documents WHERE id=$1 RETURNING id",
+          [doc.id, supplier.id],
+        );
+        const chunks = await query(
+          "SELECT * FROM document_chunks WHERE document_id=$1",
+          [doc.id],
+        );
+        for (const chunk of chunks) {
+          const [copy] = await query(
+            "INSERT INTO document_chunks(document_id,location,content) VALUES($1,$2,$3) RETURNING id",
+            [copied.id, chunk.location, chunk.content],
+          );
+          await query(
+            "INSERT INTO contract_terms(supplier_id,category,term,structured_value,unit,source_document_id,chunk_id,source_location,excerpt,confidence,origin) SELECT $2,category,term,structured_value,unit,$3,$4,source_location,excerpt,confidence,origin FROM contract_terms WHERE chunk_id=$1 AND active",
+            [chunk.id, supplier.id, copied.id, copy.id],
+          );
+        }
+      }
+    }
     const ctx = await comparison(event.id);
     const s = ctx.suppliers[0],
       other = ctx.suppliers[1];
@@ -170,17 +213,7 @@ it.skipIf(!enabled)(
       ).toBe(id);
     } finally {
       if (id) await query("DELETE FROM analyses WHERE id=$1", [id]);
-      await query(
-        "DELETE FROM audit_events WHERE event_id=$1 AND (metadata->>'analysisId'=$2 OR event_type='analysis.started' AND created_at>now()-interval '1 minute')",
-        [event.id, id ?? ""],
-      );
-      await query("UPDATE procurement_events SET status='review' WHERE id=$1", [
-        event.id,
-      ]);
-      await query(
-        "UPDATE supplier_evaluations SET qualitative_assessment=NULL WHERE event_id=$1",
-        [event.id],
-      );
+      await query("DELETE FROM procurement_events WHERE id=$1", [event.id]);
       delete process.env.ANTHROPIC_API_KEY;
     }
   },
@@ -263,6 +296,86 @@ it.skipIf(!enabled)(
       expect(terms[0].structured_value).toBe(100000);
       expect(terms[0].origin).toBe("claude");
       expect(terms[0].excerpt).toBe(output.terms[0].excerpt);
+      // A saved analysis references the original term: re-extraction must retain it.
+      const [revision] = await query(
+        "SELECT revision FROM procurement_events WHERE id=$1",
+        [eventId],
+      );
+      const [analysis] = await query(
+        "INSERT INTO analyses(event_id,recommended_supplier_id,revision,result,trace,model) VALUES($1,$2,$3,$4,$5,$6) RETURNING id",
+        [
+          eventId,
+          supplier.body.id,
+          revision.revision,
+          JSON.stringify({ testFixture: true }),
+          "[]",
+          "test-only",
+        ],
+      );
+      await query(
+        "INSERT INTO analysis_evidence(analysis_id,supplier_id,document_id,term_id,source_location,excerpt,claim,evidence_type) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        [
+          analysis.id,
+          supplier.body.id,
+          up.body.id,
+          terms[0].id,
+          chunk.location,
+          terms[0].excerpt,
+          "Test fixture",
+          "fact",
+        ],
+      );
+      create.mockResolvedValueOnce({
+        content: [{ type: "text", text: JSON.stringify(output) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      });
+      expect(
+        (await request(app).post(`/api/documents/${up.body.id}/extract`))
+          .status,
+      ).toBe(200);
+      expect(
+        (
+          await query("SELECT active FROM contract_terms WHERE id=$1", [
+            terms[0].id,
+          ])
+        )[0].active,
+      ).toBe(false);
+      expect(
+        (await request(app).get(`/api/procurement-events/${eventId}/analysis`))
+          .body.stale,
+      ).toBe(true);
+      expect(
+        (await request(app).get(`/api/procurement-events/${eventId}/evidence`))
+          .body[0].excerpt,
+      ).toBe(terms[0].excerpt);
+      expect(
+        (await request(app).get(`/api/procurement-events/${eventId}/terms`))
+          .body,
+      ).toHaveLength(1);
+      expect(
+        (
+          await request(app).get(
+            `/api/procurement-events/${eventId}/terms?history=1`,
+          )
+        ).body,
+      ).toHaveLength(2);
+      expect(
+        (
+          await request(app)
+            .post(`/api/procurement-events/${eventId}/decision`)
+            .send({
+              outcome: "accept",
+              selectedSupplierId: supplier.body.id,
+              notes: "Test stale approval prevention",
+              negotiationRequired: true,
+            })
+        ).status,
+      ).toBe(409);
+      const active = await query(
+        "SELECT id FROM contract_terms WHERE source_document_id=$1 AND active",
+        [up.body.id],
+      );
       create.mockResolvedValueOnce({
         content: [
           {
@@ -283,12 +396,13 @@ it.skipIf(!enabled)(
       expect(
         (
           await query(
-            "SELECT id FROM contract_terms WHERE source_document_id=$1",
+            "SELECT id FROM contract_terms WHERE source_document_id=$1 AND active",
             [up.body.id],
           )
         )[0].id,
-      ).toBe(terms[0].id);
+      ).toBe(active[0].id);
     } finally {
+      await query("DELETE FROM analyses WHERE event_id=$1", [eventId]);
       await query("DELETE FROM procurement_events WHERE id=$1", [eventId]);
       if (stored) await (await import("node:fs/promises")).unlink(stored);
       delete process.env.ANTHROPIC_API_KEY;

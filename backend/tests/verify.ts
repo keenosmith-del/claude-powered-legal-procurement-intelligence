@@ -1,11 +1,57 @@
 import request from "supertest";
 import assert from "node:assert/strict";
+import { spawn, type ChildProcess } from "node:child_process";
 import { app } from "../src/app.js";
 import { pool, query } from "../src/db.js";
 import { root } from "../src/config.js";
 import path from "node:path";
+import { removeUpload } from "../src/documents.js";
 const api = request(app);
 let created: string | undefined;
+let stored: string | undefined;
+let server: ChildProcess | undefined;
+async function startServer() {
+  server = spawn(
+    process.execPath,
+    ["--import", "tsx", path.join(root, "backend/src/server.ts")],
+    {
+      cwd: root,
+      env: { ...process.env, PORT: "3002" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Verification API did not start on port 3002")),
+      10000,
+    );
+    server!.once("error", (e) => {
+      clearTimeout(timeout);
+      reject(e);
+    });
+    server!.once("exit", () => {
+      clearTimeout(timeout);
+      reject(
+        new Error("Verification API exited before startup; check port 3002"),
+      );
+    });
+    server!.stdout!.on("data", (data) => {
+      if (String(data).includes("API listening")) {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+  });
+}
+async function stopServer() {
+  if (!server || server.exitCode !== null) return;
+  const child = server;
+  await new Promise<void>((resolve) => {
+    child.once("exit", () => resolve());
+    child.kill("SIGTERM");
+  });
+  server = undefined;
+}
 try {
   assert.equal((await api.get("/api/health")).status, 200);
   const events = (await api.get("/api/procurement-events")).body;
@@ -35,6 +81,23 @@ try {
     .post(`/api/procurement-events/${created}/suppliers`)
     .send({ name: "Verification supplier" });
   assert.equal(supplier.status, 201);
+  const beforeEdit = (await api.get(`/api/procurement-events/${created}`)).body
+    .revision;
+  assert.equal(
+    (
+      await api
+        .put(`/api/suppliers/${supplier.body.id}`)
+        .send({
+          name: "Verification supplier",
+          description: "Updated test submission",
+        })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await api.get(`/api/procurement-events/${created}`)).body.revision,
+    beforeEdit + 1,
+  );
   const upload = await api
     .post(`/api/suppliers/${supplier.body.id}/documents`)
     .field("documentType", "contract")
@@ -43,6 +106,11 @@ try {
       path.join(root, "documents/sample/Supplier-A-contract.txt"),
     );
   assert.equal(upload.status, 201, JSON.stringify(upload.body));
+  stored = (
+    await query("SELECT storage_path FROM supplier_documents WHERE id=$1", [
+      upload.body.id,
+    ])
+  )[0].storage_path;
   const document = (await api.get(`/api/documents/${upload.body.id}`)).body;
   assert(document.extracted_text.includes("Annual recurring price"));
   assert(document.chunks.length);
@@ -144,6 +212,39 @@ try {
       (a: any) => a.event_type === "decision.recorded",
     ),
   );
+  // Read the same records through two independently started API processes.
+  for (let restart = 0; restart < 2; restart++) {
+    await startServer();
+    const reopened = request("http://127.0.0.1:3002");
+    assert.equal(
+      (await reopened.get(`/api/procurement-events/${created}`)).body.id,
+      created,
+    );
+    assert.equal(
+      (await reopened.get(`/api/documents/${upload.body.id}`)).body
+        .extracted_text,
+      document.extracted_text,
+    );
+    assert.equal(
+      (await reopened.get(`/api/documents/${upload.body.id}/download`)).status,
+      200,
+    );
+    assert.equal(
+      (await reopened.get(`/api/procurement-events/${created}/decisions`))
+        .body[0].id,
+      decision.body.id,
+    );
+    assert.equal(
+      (
+        await reopened.get(`/api/procurement-events/${id}/comparison`)
+      ).body.suppliers.find((s: any) => s.id === b.id).financial.total,
+      b.financial.total,
+    );
+    await stopServer();
+  }
+  console.log(
+    "PASS: documents, event, decision and comparison survive API restart.",
+  );
   assert.equal(
     (await api.get("/api/procurement-events/not-a-uuid")).status,
     400,
@@ -152,7 +253,9 @@ try {
     "PASS: real PostgreSQL, event creation, upload, text, evidence, calculations, evaluation, scenarios, decisions and audit.",
   );
 } finally {
+  await stopServer();
   if (created)
     await query("DELETE FROM procurement_events WHERE id=$1", [created]);
+  if (stored) await removeUpload(stored);
   await pool.end();
 }

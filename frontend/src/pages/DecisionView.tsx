@@ -10,6 +10,7 @@ export default function DecisionView({
   action,
   busy,
   names,
+  analysis,
 }: WorkspaceViewProps) {
   return (
     <>
@@ -39,7 +40,9 @@ export default function DecisionView({
             Outcome
             <select name="outcome">
               <option value="defer">Defer pending review</option>
-              <option value="accept">Accept / select supplier</option>
+              <option value="accept" disabled={analysis?.stale}>
+                Accept / select supplier
+              </option>
               <option value="reject">Reject recommendation</option>
             </select>
           </label>

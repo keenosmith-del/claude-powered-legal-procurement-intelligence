@@ -16,7 +16,6 @@ const inputSchema = {
   type: "object" as const,
   properties: {
     supplierId: { type: "string" },
-    termId: { type: "string" },
     annualPrice: { type: "number" },
     escalationPercent: { type: "number" },
     years: { type: "integer" },
@@ -28,7 +27,12 @@ const tools: Tool[] = [
     name: "get_supplier_profile",
     description:
       "Get the selected event supplier, deterministic evaluation, financial projections and terms",
-    input_schema: { ...inputSchema, required: ["supplierId"] },
+    input_schema: {
+      type: "object",
+      properties: { supplierId: { type: "string" } },
+      required: ["supplierId"],
+      additionalProperties: false,
+    },
   },
   {
     name: "get_procurement_requirements",
@@ -43,7 +47,12 @@ const tools: Tool[] = [
     name: "get_contract_evidence",
     description:
       "Retrieve a verbatim source excerpt for a contract term in this event",
-    input_schema: { ...inputSchema, required: ["termId"] },
+    input_schema: {
+      type: "object",
+      properties: { termId: { type: "string" } },
+      required: ["termId"],
+      additionalProperties: false,
+    },
   },
   {
     name: "calculate_projected_cost",
@@ -115,16 +124,22 @@ export function validateGrounding(result: AnalysisResult, ctx: any) {
   return result;
 }
 export async function executeTool(ctx: any, name: string, raw: unknown) {
-  const input = z
-    .object({
-      supplierId: z.string().uuid().optional(),
-      termId: z.string().uuid().optional(),
-      annualPrice: z.number().positive().optional(),
-      escalationPercent: z.number().min(0).max(100).optional(),
-      years: z.number().int().min(1).max(10).optional(),
-    })
-    .strict()
-    .parse(raw);
+  const supplierInput = z.object({ supplierId: z.string().uuid() }).strict();
+  const costInput = supplierInput.extend({
+    annualPrice: z.number().positive().optional(),
+    escalationPercent: z.number().min(0).max(100).optional(),
+    years: z.number().int().min(1).max(10).optional(),
+  });
+  const schemas: Record<string, z.ZodType> = {
+    get_supplier_profile: supplierInput,
+    get_procurement_requirements: z.object({}).strict(),
+    get_contract_evidence: z.object({ termId: z.string().uuid() }).strict(),
+    calculate_projected_cost: costInput,
+  };
+  if (!schemas[name]) throw new AppError(400, "Unknown tool");
+  const input = schemas[name].parse(raw) as z.infer<typeof costInput> & {
+    termId?: string;
+  };
   if (name === "get_procurement_requirements")
     return {
       requirements: ctx.event.requirements,
@@ -337,6 +352,8 @@ export async function whatIf(id: string, input: unknown) {
   await audit(id, "scenario.calculated", {
     supplierId: scenario.supplierId,
     changes: scenario.changes,
+    requirements: scenario.requirements ?? {},
+    eventRevision: ctx.event.revision,
     delta,
   });
   return result;
